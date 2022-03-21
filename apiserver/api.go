@@ -27,8 +27,8 @@ import (
 	"github.com/go-web/httprl"
 	"github.com/go-web/httprl/memcacherl"
 	"github.com/go-web/httprl/redisrl"
-	newrelic "github.com/newrelic/go-agent"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/cors"
 	"golang.org/x/text/language"
 
@@ -39,7 +39,17 @@ type apiHandler struct {
 	db    *freegeoip.DB
 	conf  *Config
 	cors  *cors.Cors
-	nrapp newrelic.Application
+}
+
+func HttpRequestsTotal(name string) *prometheus.CounterVec {
+	r := prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: fmt.Sprintf("http_requests_total_%s", string(name)),
+			Help: "Count of all HTTP requests",
+		},[]string{"code", "method",},
+	)
+
+	prometheus.MustRegister(r)
+	return r
 }
 
 // NewHandler creates an http handler for the freegeoip server that
@@ -87,23 +97,17 @@ func (f *apiHandler) config(mc *httpmux.Config) error {
 		}
 		mc.Use(rl.Handle)
 	}
-	if f.conf.NewrelicName != "" && f.conf.NewrelicKey != "" {
-		config := newrelic.NewConfig(f.conf.NewrelicName, f.conf.NewrelicKey)
-		app, err := newrelic.NewApplication(config)
-		if err != nil {
-			return fmt.Errorf("failed to create newrelic application: {name: %v, key: %v}", f.conf.NewrelicName, f.conf.NewrelicKey)
-		}
-		f.nrapp = app
-	}
 	return nil
 }
 
 func newPublicDirHandler(path string) http.HandlerFunc {
+	c := HttpRequestsTotal("frontend")
 	handler := http.NotFoundHandler()
 	if path != "" {
 		handler = http.FileServer(http.Dir(path))
 	}
-	return prometheus.InstrumentHandler("frontend", handler)
+
+	return promhttp.InstrumentHandlerCounter(c, handler,)
 }
 
 func hstsMiddleware(policy string) httpmux.MiddlewareFunc {
@@ -156,11 +160,9 @@ type writerFunc func(w http.ResponseWriter, r *http.Request, d *responseRecord)
 
 func (f *apiHandler) register(name string, writer writerFunc) http.HandlerFunc {
 	var h http.Handler
-	if f.nrapp == nil {
-		h = prometheus.InstrumentHandler(name, f.iplookup(writer))
-	} else {
-		h = prometheus.InstrumentHandler(newrelic.WrapHandle(f.nrapp, name, f.iplookup(writer)))
-	}
+
+	c := HttpRequestsTotal(name)
+	h = promhttp.InstrumentHandlerCounter(c, f.iplookup(writer),)
 
 	return f.cors.Handler(h).ServeHTTP
 }
@@ -232,6 +234,8 @@ func (q *geoipQuery) Record(ip net.IP, lang string) *responseRecord {
 
 	r := &responseRecord{
 		IP:          ip.String(),
+		ContinentCode: q.Continent.Code,
+		ContinentName: q.Continent.Names[lang],
 		CountryCode: q.Country.ISOCode,
 		CountryName: q.Country.Names[lang],
 		City:        q.City.Names[lang],
@@ -240,6 +244,7 @@ func (q *geoipQuery) Record(ip net.IP, lang string) *responseRecord {
 		Latitude:    roundFloat(q.Location.Latitude, .5, 4),
 		Longitude:   roundFloat(q.Location.Longitude, .5, 4),
 		MetroCode:   q.Location.MetroCode,
+		AccuracyRadius:   q.Location.AccuracyRadius,
 	}
 	if len(q.Region) > 0 {
 		r.RegionCode = q.Region[0].ISOCode
@@ -285,18 +290,21 @@ func roundFloat(val float64, roundOn float64, places int) (newVal float64) {
 }
 
 type responseRecord struct {
-	XMLName     xml.Name `xml:"Response" json:"-"`
-	IP          string   `json:"ip"`
-	CountryCode string   `json:"country_code"`
-	CountryName string   `json:"country_name"`
-	RegionCode  string   `json:"region_code"`
-	RegionName  string   `json:"region_name"`
-	City        string   `json:"city"`
-	ZipCode     string   `json:"zip_code"`
-	TimeZone    string   `json:"time_zone"`
-	Latitude    float64  `json:"latitude"`
-	Longitude   float64  `json:"longitude"`
-	MetroCode   uint     `json:"metro_code"`
+	XMLName        xml.Name `xml:"Response" json:"-"`
+	IP             string   `json:"ip"`
+	ContinentCode  string   `json:"continent_code"`
+	ContinentName  string   `json:"continent_name"`
+	CountryCode    string   `json:"country_code"`
+	CountryName    string   `json:"country_name"`
+	RegionCode     string   `json:"region_code"`
+	RegionName     string   `json:"region_name"`
+	City           string   `json:"city"`
+	ZipCode        string   `json:"zip_code"`
+	TimeZone       string   `json:"time_zone"`
+	Latitude       float64  `json:"latitude"`
+	Longitude      float64  `json:"longitude"`
+	MetroCode      uint     `json:"metro_code"`
+	AccuracyRadius uint     `json:"accuracy_radius"`
 }
 
 func (rr *responseRecord) String() string {
@@ -305,6 +313,8 @@ func (rr *responseRecord) String() string {
 	w.UseCRLF = true
 	w.Write([]string{
 		rr.IP,
+		rr.ContinentCode,
+		rr.ContinentName,
 		rr.CountryCode,
 		rr.CountryName,
 		rr.RegionCode,
@@ -315,6 +325,7 @@ func (rr *responseRecord) String() string {
 		strconv.FormatFloat(rr.Latitude, 'f', 4, 64),
 		strconv.FormatFloat(rr.Longitude, 'f', 4, 64),
 		strconv.Itoa(int(rr.MetroCode)),
+		strconv.Itoa(int(rr.AccuracyRadius)),
 	})
 	w.Flush()
 	return b.String()

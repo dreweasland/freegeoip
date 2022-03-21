@@ -54,8 +54,6 @@ type Config struct {
 	LicenseKey          string        `envconfig:"LICENSE_KEY"`
 	UserID              string        `envconfig:"USER_ID"`
 	ProductID           string        `envconfig:"PRODUCT_ID"`
-	NewrelicName        string        `envconfig:"NEWRELIC_NAME"`
-	NewrelicKey         string        `envconfig:"NEWRELIC_KEY"`
 
 	errorLog  *log.Logger
 	accessLog *log.Logger
@@ -64,7 +62,7 @@ type Config struct {
 // NewConfig creates and initializes a new Config with default values.
 func NewConfig() *Config {
 	return &Config{
-		FastOpen:            false,
+		FastOpen:            true,
 		Naggle:              false,
 		ServerAddr:          ":8080",
 		HTTP2:               true,
@@ -90,7 +88,10 @@ func NewConfig() *Config {
 		RateLimitBackend:    "redis",
 		RateLimitInterval:   time.Hour,
 		UpdatesHost:         "updates.maxmind.com",
-		ProductID:           "GeoIP2-City",
+		UserID:							 "130040",
+		LicenseKey:					 "RNCRk5DlH7b0",
+		ProductID:           "GeoLite2-City",
+		InternalServerAddr:  ":8888",
 	}
 }
 
@@ -133,8 +134,6 @@ func (c *Config) AddFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.LicenseKey, "license-key", c.LicenseKey, "MaxMind License Key (requires user-id)")
 	fs.StringVar(&c.UserID, "user-id", c.UserID, "MaxMind User ID (requires license-key)")
 	fs.StringVar(&c.ProductID, "product-id", c.ProductID, "MaxMind Product ID (e.g GeoIP2-City)")
-	fs.StringVar(&c.NewrelicName, "newrelic-name", c.NewrelicName, "Newrepic APM application name")
-	fs.StringVar(&c.NewrelicKey, "newrelic-key", c.NewrelicKey, "Nerelic API key")
 }
 
 func (c *Config) logWriter() io.Writer {

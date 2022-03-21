@@ -44,7 +44,7 @@ There are [pre-compiled binaries](https://github.com/dreweasland/freegeoip/relea
 For production workloads you may want to use different configuration for the freegeoip web server, for example:
 
 * Enabling the "internal server" for collecting metrics and profiling/tracing the freegeoip web server on demand
-* Monitoring the internal server using [Prometheus](https://prometheus.io), or exporting your metrics to [New Relic](https://newrelic.com)
+* Monitoring the internal server using [Prometheus](https://prometheus.io)
 * Serving the freegeoip API over HTTPS (TLS) using your own certificates, or provisioned automatically using [LetsEncrypt.org](https://letsencrypt.org)
 * Configuring [HSTS](https://en.wikipedia.org/wiki/HTTP_Strict_Transport_Security) to restrict your browser clients to always use HTTPS
 * Configuring the read and write timeouts to avoid stale clients consuming server resources
