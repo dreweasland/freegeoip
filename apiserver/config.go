@@ -88,7 +88,6 @@ func NewConfig() *Config {
 		RateLimitBackend:    "redis",
 		RateLimitInterval:   time.Hour,
 		UpdatesHost:         "updates.maxmind.com",
-		InternalServerAddr:  ":8888",
 	}
 }
 
