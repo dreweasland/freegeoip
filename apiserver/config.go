@@ -88,9 +88,6 @@ func NewConfig() *Config {
 		RateLimitBackend:    "redis",
 		RateLimitInterval:   time.Hour,
 		UpdatesHost:         "updates.maxmind.com",
-		UserID:							 "130040",
-		LicenseKey:					 "RNCRk5DlH7b0",
-		ProductID:           "GeoLite2-City",
 		InternalServerAddr:  ":8888",
 	}
 }
