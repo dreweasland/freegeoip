@@ -27,7 +27,6 @@ import (
 	"github.com/go-web/httprl"
 	"github.com/go-web/httprl/memcacherl"
 	"github.com/go-web/httprl/redisrl"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/cors"
 	"golang.org/x/text/language"
@@ -36,20 +35,9 @@ import (
 )
 
 type apiHandler struct {
-	db    *freegeoip.DB
-	conf  *Config
-	cors  *cors.Cors
-}
-
-func HttpRequestsTotal(name string) *prometheus.CounterVec {
-	r := prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: fmt.Sprintf("http_requests_total_%s", string(name)),
-			Help: "Count of all HTTP requests",
-		},[]string{"code", "method",},
-	)
-
-	prometheus.MustRegister(r)
-	return r
+	db   *freegeoip.DB
+	conf *Config
+	cors *cors.Cors
 }
 
 // NewHandler creates an http handler for the freegeoip server that
@@ -89,7 +77,6 @@ func (f *apiHandler) config(mc *httpmux.Config) error {
 	if f.conf.HSTS != "" {
 		mc.UseFunc(hstsMiddleware(f.conf.HSTS))
 	}
-	mc.UseFunc(clientMetricsMiddleware(f.db))
 	if f.conf.RateLimitLimit > 0 {
 		rl, err := newRateLimiter(f.conf)
 		if err != nil {
@@ -107,7 +94,7 @@ func newPublicDirHandler(path string) http.HandlerFunc {
 		handler = http.FileServer(http.Dir(path))
 	}
 
-	return promhttp.InstrumentHandlerCounter(c, handler,)
+	return promhttp.InstrumentHandlerCounter(c, handler)
 }
 
 func hstsMiddleware(policy string) httpmux.MiddlewareFunc {
@@ -122,47 +109,13 @@ func hstsMiddleware(policy string) httpmux.MiddlewareFunc {
 	}
 }
 
-func clientMetricsMiddleware(db *freegeoip.DB) httpmux.MiddlewareFunc {
-	type query struct {
-		Country struct {
-			ISOCode string `maxminddb:"iso_code"`
-		} `maxminddb:"country"`
-	}
-	return func(next http.HandlerFunc) http.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) {
-			next(w, r)
-			// Collect metrics after serving the request.
-			host, _, err := net.SplitHostPort(r.RemoteAddr)
-			if err != nil {
-				return
-			}
-			ip := net.ParseIP(host)
-			if ip == nil {
-				return
-			}
-			if ip.To4() != nil {
-				clientIPProtoCounter.WithLabelValues("4").Inc()
-			} else {
-				clientIPProtoCounter.WithLabelValues("6").Inc()
-			}
-			var q query
-			err = db.Lookup(ip, &q)
-			if err != nil || q.Country.ISOCode == "" {
-				clientCountryCounter.WithLabelValues("unknown").Inc()
-				return
-			}
-			clientCountryCounter.WithLabelValues(q.Country.ISOCode).Inc()
-		}
-	}
-}
-
 type writerFunc func(w http.ResponseWriter, r *http.Request, d *responseRecord)
 
 func (f *apiHandler) register(name string, writer writerFunc) http.HandlerFunc {
 	var h http.Handler
 
 	c := HttpRequestsTotal(name)
-	h = promhttp.InstrumentHandlerCounter(c, f.iplookup(writer),)
+	h = promhttp.InstrumentHandlerCounter(c, f.iplookup(writer))
 
 	return f.cors.Handler(h).ServeHTTP
 }
@@ -185,11 +138,17 @@ func (f *apiHandler) iplookup(writer writerFunc) http.HandlerFunc {
 			return
 		}
 		ip, q := ips[rand.Intn(len(ips))], &geoipQuery{}
+		if ip.To4() != nil {
+			clientIPProtoCounter.WithLabelValues("4").Inc()
+		} else {
+			clientIPProtoCounter.WithLabelValues("6").Inc()
+		}
 		err = f.db.Lookup(ip, &q.DefaultQuery)
 		if err != nil {
 			http.Error(w, "Try again later.", http.StatusServiceUnavailable)
 			return
 		}
+		clientCountryCounter.WithLabelValues(q.Country.ISOCode).Inc()
 		w.Header().Set("X-Database-Date", f.db.Date().Format(http.TimeFormat))
 		resp := q.Record(ip, r.Header.Get("Accept-Language"))
 		writer(w, r, resp)
@@ -233,18 +192,18 @@ func (q *geoipQuery) Record(ip net.IP, lang string) *responseRecord {
 	lang = parseAcceptLanguage(lang, q.Country.Names)
 
 	r := &responseRecord{
-		IP:          ip.String(),
-		ContinentCode: q.Continent.Code,
-		ContinentName: q.Continent.Names[lang],
-		CountryCode: q.Country.ISOCode,
-		CountryName: q.Country.Names[lang],
-		City:        q.City.Names[lang],
-		ZipCode:     q.Postal.Code,
-		TimeZone:    q.Location.TimeZone,
-		Latitude:    roundFloat(q.Location.Latitude, .5, 4),
-		Longitude:   roundFloat(q.Location.Longitude, .5, 4),
-		MetroCode:   q.Location.MetroCode,
-		AccuracyRadius:   q.Location.AccuracyRadius,
+		IP:             ip.String(),
+		ContinentCode:  q.Continent.Code,
+		ContinentName:  q.Continent.Names[lang],
+		CountryCode:    q.Country.ISOCode,
+		CountryName:    q.Country.Names[lang],
+		City:           q.City.Names[lang],
+		ZipCode:        q.Postal.Code,
+		TimeZone:       q.Location.TimeZone,
+		Latitude:       roundFloat(q.Location.Latitude, .5, 4),
+		Longitude:      roundFloat(q.Location.Longitude, .5, 4),
+		MetroCode:      q.Location.MetroCode,
+		AccuracyRadius: q.Location.AccuracyRadius,
 	}
 	if len(q.Region) > 0 {
 		r.RegionCode = q.Region[0].ISOCode

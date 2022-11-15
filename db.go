@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math"
 	"net"
 	"net/http"
@@ -33,8 +32,6 @@ var (
 
 	// Local cached copy of a database downloaded from a URL.
 	defaultDB = filepath.Join(os.TempDir(), "freegeoip", "db.gz")
-
-	// MaxMindDB is the URL of the free MaxMind GeoLite2 database.
 	MaxMindDB = ""
 )
 
@@ -201,7 +198,7 @@ func (db *DB) newReader(dbfile string) (*maxminddb.Reader, string, error) {
 		return nil, "", err
 	}
 	defer gzf.Close()
-	b, err := ioutil.ReadAll(gzf)
+	b, err := io.ReadAll(gzf)
 	if err != nil {
 		return nil, "", err
 	}
@@ -242,7 +239,7 @@ func (db *DB) autoUpdate(url string) {
 		} else {
 			backoff = db.updateInterval
 		}
-		db.sendInfo("finished update")
+		db.sendInfo("finished update check")
 		select {
 		case <-db.notifyQuit:
 			return
@@ -287,12 +284,14 @@ func (db *DB) needUpdate(url string) (bool, error) {
 	// Check X-Database-MD5 if it exists
 	headerMd5 := resp.Header.Get("X-Database-MD5")
 	if len(headerMd5) > 0 && db.checksum != headerMd5 {
+		db.sendInfo("new database available - updating")
 		return true, nil
 	}
 
 	if stat.Size() != resp.ContentLength {
 		return true, nil
 	}
+	db.sendInfo("no new database available - skipping")
 	return false, nil
 }
 
@@ -411,7 +410,7 @@ func (db *DB) Lookup(addr net.IP, result interface{}) error {
 // DefaultQuery is the default query used for database lookups.
 type DefaultQuery struct {
 	Continent struct {
-		Code  string 						`maxminddb:"code"`
+		Code  string            `maxminddb:"code"`
 		Names map[string]string `maxminddb:"names"`
 	} `maxminddb:"continent"`
 	Country struct {

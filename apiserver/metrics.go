@@ -4,10 +4,24 @@
 
 package apiserver
 
-import "github.com/prometheus/client_golang/prometheus"
+import (
+	"fmt"
+
+	"github.com/prometheus/client_golang/prometheus"
+)
+
+func HttpRequestsTotal(name string) *prometheus.CounterVec {
+	r := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: fmt.Sprintf("http_requests_total_%s", string(name)),
+		Help: "Count of all HTTP requests",
+	}, []string{"code", "method"},
+	)
+
+	prometheus.MustRegister(r)
+	return r
+}
 
 // Experimental metrics for Prometheus, might change in the future.
-
 var dbEventCounter = prometheus.NewCounterVec(
 	prometheus.CounterOpts{
 		Name: "freegeoip_db_events_total",
@@ -43,6 +57,6 @@ var clientConnsGauge = prometheus.NewGaugeVec(
 func init() {
 	prometheus.MustRegister(dbEventCounter)
 	prometheus.MustRegister(clientCountryCounter)
-	prometheus.MustRegister(clientConnsGauge)
 	prometheus.MustRegister(clientIPProtoCounter)
+	prometheus.MustRegister(clientConnsGauge)
 }

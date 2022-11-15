@@ -54,9 +54,6 @@ type Config struct {
 	LicenseKey          string        `envconfig:"LICENSE_KEY"`
 	UserID              string        `envconfig:"USER_ID"`
 	ProductID           string        `envconfig:"PRODUCT_ID"`
-
-	errorLog  *log.Logger
-	accessLog *log.Logger
 }
 
 // NewConfig creates and initializes a new Config with default values.
